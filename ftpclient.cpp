@@ -391,7 +391,7 @@ int main()
 {
     
     FTPClient ftp;
-    ftp.LoginFTPServer("192.168.2.138", 21, "PC", "yc12345^&*()");
+    ftp.LoginFTPServer("192.168.2.138", 21, "PC", "123456");
     //ftp.ChangeDirectory("GitHub/RSA");
     //ftp.ListDirectory();
     //ftp.DownloadFile("data.txt");
