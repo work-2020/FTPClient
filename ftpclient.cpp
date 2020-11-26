@@ -198,13 +198,22 @@ int FTPClient::DownloadFile(string localDir, string filename)
         fout << "Err" << endl;
         cout << "Err" << endl;
     }
-    int r = recv(this->DataSocket, (char*)data, filesize, 0);
+    int recvnum(0);
+    int r;
+    while(1)
+    {
+        r = recv(this->DataSocket, (char*)(data + recvnum), filesize-recvnum, 0);
+        if(r>0) recvnum += r;
+        if(recvnum == filesize)
+            break;
+    }
+    //int r = recv(this->DataSocket, (char*)data, filesize, 0);
     fstream fout(localDir+ "\\" + filename, ios::out | ios::binary);
     fout.write((char*)data, filesize);
     fout.close();
     delete[] data;
     CloseDataLink();
-    return r;
+    return recvnum;
 }
 void FTPClient::ChangeDirectory(string dirpath)
 {

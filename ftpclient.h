@@ -7,7 +7,6 @@
 #include <windows.h>
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "wsock32.lib")
-#define closesocket close
 #else
 #include <sys/socket.h>
 #include <sys/ioctl.h>
