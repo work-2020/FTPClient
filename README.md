@@ -167,3 +167,48 @@ string FTPClient::GetResponse(int sockfd)
 }
 ```
 
+## Linux平台迁移到Windows平台
+
+两个平台上socket用到的头文件不太一致，可以使用如下方式。
+
+用到的链接库不同，超时时间不同
+
+```c++
+#ifdef WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <direct.h>
+#include <windows.h>
+#pragma comment(lib, "ws2_32.lib")
+#pragma comment(lib, "wsock32.lib")
+#define close closesocket 
+#else
+#include <sys/socket.h>
+#include <sys/ioctl.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <netinet/in.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+typedef SOCKET int;
+#endif
+#include <string>
+#include <string.h>
+#include <iostream>
+#include <vector>
+#include <fstream>
+#include <dirent.h>
+#include<algorithm>
+
+using namespace std;
+#ifdef WIN32
+int timeout = 3000;
+#else
+struct timeval timeout = {3,0}; 
+#endif
+```
+
+vscode的配置文件tasks.json中args参数中添加 `"-lwsock32"`，`"-lws2_32"`，`"-static"`；
+
+vscode的配置文件tasks.json中type参数应该是shell
+

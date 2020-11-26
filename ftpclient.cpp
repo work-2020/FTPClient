@@ -2,19 +2,38 @@
 
 FTPClient::FTPClient()
 {
-    this->ConnSocket = socket(AF_INET, SOCK_STREAM, 0);
+    
+    #ifdef WIN32
+    WORD sockVersion = MAKEWORD(2,2);  
+    WSADATA wsaData;  
+    if(WSAStartup(sockVersion, &wsaData)!=0)  
+    {  
+        cout << "err" << endl; 
+    }
+    this->ConnSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    setsockopt(this->ConnSocket,SOL_SOCKET,SO_SNDTIMEO,(char *)&timeout,sizeof(timeout));
+    setsockopt(this->ConnSocket,SOL_SOCKET,SO_RCVTIMEO,(char *)&timeout,sizeof(timeout));
+    #else
+    this->ConnSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     setsockopt(this->ConnSocket,SOL_SOCKET,SO_SNDTIMEO,(char *)&timeout,sizeof(struct timeval));
     setsockopt(this->ConnSocket,SOL_SOCKET,SO_RCVTIMEO,(char *)&timeout,sizeof(struct timeval));
+    #endif
     fout.open("log.txt");
+    
+    
 }
+
 FTPClient::~FTPClient()
 {
+    
     //还需要关闭FTP连接
     //...
     close(this->ConnSocket);
     //close(this->DataSocket);
     fout.close();
+    
 }
+
 int FTPClient::LoginFTPServer(string serverip, int serverport, string username, string pass)
 {
     this->ServerIP = serverip;
@@ -23,21 +42,6 @@ int FTPClient::LoginFTPServer(string serverip, int serverport, string username, 
     this->Password = pass;
     fout << "Connectting to FTP Server: " << this->ServerIP << endl;
 
-/*
-    struct sockaddr_in servaddr;
-    unsigned int argp = 1;
-    //ioctl(this->ConnSocket, FIONBIO, &argp);//设置为非阻塞模式
-    memset(&servaddr, 0, sizeof(struct sockaddr_in));
-    servaddr.sin_family = AF_INET;
-    servaddr.sin_port = htons(this->ServerPort);
-    servaddr.sin_addr.s_addr = inet_addr(this->ServerIP.c_str());
-
-    if (connect(this->ConnSocket, (struct sockaddr *)&servaddr, sizeof(sockaddr)) == -1)
-    {
-        fout << "can not connect to " << this->ServerIP << endl;
-        return -1;
-    }
-*/
     if(ConnectFTPServer(this->ConnSocket, this->ServerIP, this->ServerPort) == -1)
         return -1;
     string servresponse = GetResponse(this->ConnSocket);
@@ -87,21 +91,7 @@ int FTPClient::CreatDataLink()
     
     int beg = servresponse.find_first_of('(');
     int end = servresponse.find_first_of(')');
-    /*
-    string str_ip_port = servresponse.substr(beg+1, end - beg - 1);
-    vector<int> vec_ip_port;
-    beg = 0;
-    while(1)
-    {
-        end = str_ip_port.substr(beg, str_ip_port.size() - beg).find_first_of(',') + beg;
-        if(end < beg) break;
-        string str_tmp = str_ip_port.substr(beg, end-beg);
-        vec_ip_port.push_back(stoi(str_tmp));
-        beg = end + 1;
-    }
-    vec_ip_port.push_back(stoi(str_ip_port.substr(beg, str_ip_port.size() - beg)));
-    //for(int i=0;i<vec_ip_port.size();++i) fout << vec_ip_port[i] << endl;
-    */
+
     //fout << "creat data link" << endl;
     vector<int> vec_ip_port;
     vector<string> vec_str = StringSplit(servresponse.substr(beg+1, end - beg - 1), ",");
@@ -118,17 +108,10 @@ int FTPClient::CreatDataLink()
 int FTPClient::CloseDataLink()
 {
     //fout << "close data link" << endl;
-    close(this->DataSocket);
+    int r = close(this->DataSocket);
     string servresponse = GetResponse(this->ConnSocket);
-    /*
-    fout << servresponse << endl;
-    if(CheckResponse(servresponse, 226) == 1)
-        fout << "OK" << endl;
-    else
-    {
-        fout << "Err" << endl;
-    }
-    */
+
+   return r;
 }
 string FTPClient::GetResponse(int sockfd)
 {
@@ -183,7 +166,7 @@ int FTPClient::DownloadFile(string localDir, string filename)
     int filesize = stoi(vec_str[1]);
 
     //检查本地是否存在该文件，若文件大小一致视作相同，不必重新下载
-    fstream fin(localDir+ "//" + filename, ios::in | ios::binary);
+    fstream fin(localDir+ "\\" + filename, ios::in | ios::binary);
     if(fin.is_open())
     {
         fin.seekg(0,ios::end);
@@ -198,27 +181,35 @@ int FTPClient::DownloadFile(string localDir, string filename)
     
     
     CreatDataLink();
+    cout << filename << "    ";
     fout << ">ftp RETR " << filename << "  ";// << endl;
     unsigned char *data = new unsigned char[filesize];
     string download_cmd = "RETR " + filename + "\r\n";
     send(this->ConnSocket, download_cmd.c_str(), download_cmd.size(), 0);
     servresponse = GetResponse(this->ConnSocket);
     //fout << servresponse << endl;
-    if(CheckResponse(servresponse, 125) == 1)
+    if(CheckResponse(servresponse, 125) == 1 || CheckResponse(servresponse, 150) == 1)
+    {
         fout << "OK" << endl;
+        cout << "OK" << endl;
+    }
     else
     {
         fout << "Err" << endl;
+        cout << "Err" << endl;
     }
-    recv(this->DataSocket, data, filesize, 0);
-    fstream fout(localDir+ "//" + filename, ios::out | ios::binary);
+    int r = recv(this->DataSocket, (char*)data, filesize, 0);
+    fstream fout(localDir+ "\\" + filename, ios::out | ios::binary);
     fout.write((char*)data, filesize);
     fout.close();
     delete[] data;
     CloseDataLink();
+    return r;
 }
 void FTPClient::ChangeDirectory(string dirpath)
 {
+    if(dirpath == "")
+        return;
     fout << ">ftp " << "cd " + dirpath << "  ";// << endl;
     string cwd_cmd = "CWD " + dirpath + "\r\n";
     send(this->ConnSocket, cwd_cmd.c_str(), cwd_cmd.size(), 0);
@@ -239,7 +230,7 @@ string FTPClient::ListDirectory()
     send(this->ConnSocket, ls_cmd.c_str(), ls_cmd.size(), 0);
     string servresponse = GetResponse(this->ConnSocket);
     //cout << servresponse << endl;
-    if(CheckResponse(servresponse, 125) == 1)
+    if(CheckResponse(servresponse, 125) == 1 || CheckResponse(servresponse, 150) == 1)
         fout << "OK" << endl;
     else
     {
@@ -278,57 +269,72 @@ vector<string> FTPClient::StringSplit(string strSrc, string strFlag)
 int FTPClient::FileIterator(string localDir, string ftpDir)
 {
     //创建本地文件夹
-    vector<string> vec_str = StringSplit(ftpDir, "/");
-    string childDirName = vec_str[vec_str.size()-1];
-    if(CreatChildDir(localDir, childDirName) == -1)
+    //cout << "ftpdir" << " " << ftpDir << endl;
+    if(localDir.size() > 0 && localDir[localDir.size() - 1] == '\\')
+        localDir = localDir.substr(0, localDir.size()-1);
+    //cout << "localDir " << localDir << endl;
+    vector<string> vec_str = StringSplit(ftpDir, "\\");
+    string childDirName("");
+    if(vec_str.size() > 0)
     {
-        fout << "can not creat directory" << childDirName << " at localhost" << endl;
-        return -1;
+        childDirName = vec_str[vec_str.size()-1];
+        //cout << "childDirName" << " " << childDirName << endl;
+        if(CreatChildDir(localDir, childDirName) == -1)
+        {
+            fout << "can not creat directory" << childDirName << " at localhost" << endl;
+            return -1;
+        }
     }
+    
     //ftp切换到目标文件夹
-    //fout << "Dir " << ftpDir << endl; 
+    replace(ftpDir.begin(), ftpDir.end(), '\\', '/');
     ChangeDirectory(ftpDir);
-    //string workdir = PrintWorkDir();
-    //fout << "workdir: " << workdir << endl;
     string str_dir_info = ListDirectory();
         
     vector<string> vec_dir_info = StringSplit(str_dir_info, "\r\n");
-    FileNode *pre = nullptr;
-    
+    vector<string> vec_str_tmp;
     for(int i=0;i<vec_dir_info.size();++i)
     {
-        string filename = vec_dir_info[i].substr(39, vec_dir_info[i].size() - 39);
-        /*
-        char *ptr_c = new char[filename.size() + 1];
-        memcpy(ptr_c, filename.c_str(), filename.size());
-        ptr_c[filename.size()] = 0;
-        FileNode *child = new FileNode(ptr_c);
-        child->father = father;
-        if(i == 0)
-            father->child = child;
+        if(vec_dir_info[i][0] == 'd' || vec_dir_info[i][0] == '-')
+        {
+            string filename = vec_dir_info[i].substr(56, vec_dir_info[i].size() - 56);
+            if(vec_dir_info[i][0] == 'd')
+            {
+                FileIterator(localDir+"\\"+childDirName,filename);
+            }
+            else
+            {
+                DownloadFile(localDir+"\\"+childDirName, filename);
+            }
+            vec_str_tmp = StringSplit(ftpDir, "/");
+        }
+        else if(vec_dir_info[i][0] >= '0' && vec_dir_info[i][0] <= '2')
+        {
+            string filename = vec_dir_info[i].substr(39, vec_dir_info[i].size() - 39);
+            if(vec_dir_info[i].substr(24,5) == "<DIR>")
+            {
+                FileIterator(localDir+"\\"+childDirName,filename);
+            }
+            else
+            {
+                DownloadFile(localDir+"\\"+childDirName, filename);
+            }
+            vec_str_tmp = StringSplit(ftpDir, "\\");
+        }
         else
         {
-            pre->next = child;
-        }
-        */
-        if(vec_dir_info[i].substr(24,5) == "<DIR>")
-        {
-            FileIterator(localDir+"//"+childDirName,filename);
-        }
-        else
-        {
-            DownloadFile(localDir+"//"+childDirName, filename);
+            fout << vec_dir_info[i] << endl;
+            cout << "FTP Server's Operation System is not Windows or Linux" << endl;
+            //return -1;
         }
         
-        /*
-        if(pre != nullptr) fout << "pre: " << pre->name << " ";
-        fout << "cur: " << child->name << endl; 
-        pre = child;
-        */
     }
-    vector<string> vec_str_tmp = StringSplit(ftpDir, "/");
+    //cout << ftpDir << endl;
+    //vector<string> vec_str_tmp = StringSplit(ftpDir, "\\");
+    //cout << vec_str_tmp.size() << endl;
     for(int i=0;i<vec_str_tmp.size();++i)
         ChangeDirectory("..");
+    return 1;
 }
 int FTPClient::SetUTF8()
 {
@@ -338,41 +344,28 @@ int FTPClient::SetUTF8()
     string servresponse = GetResponse(this->ConnSocket);
     //fout << servresponse << endl;
     if(CheckResponse(servresponse, 200) == 1)
+    {
         fout << "OK" << endl;
+        return 1;
+    }
     else
     {
         fout << "Err" << endl;
+        return -1;
     }
 }
 int FTPClient::CreatChildDir(string fatherDirPath, string childDirName)
 {
-    string childDirPath = fatherDirPath + "//" + childDirName;
+    string childDirPath = fatherDirPath + "\\" + childDirName;
+    //cout << childDirPath << endl;
     if(access(fatherDirPath.c_str(), 0) == 0)
     {
-        if(access(childDirPath.c_str(), 0) == 0 || mkdir(childDirPath.c_str(), 0) == 0)
+        if(access(childDirPath.c_str(), 0) == 0 || mkdir(childDirPath.c_str()) == 0)
             return 1;   
     }
     return -1;
     
 }
-/*
-int FTPClient::AutoDownloadDir(string localDir, string ftpDir)
-{
-    vector<string> vec_str = StringSplit(ftpDir, "/");
-    string childDirName = vec_str[vec_str.size()-1];
-    if(CreatChildDir(localDir,childDirName) == -1)
-    {
-        fout << "can not creat directory" << childDirName << " at localhost" << endl;
-        return -1;
-    }
-    char *ptr_c = new char[ftpDir.size() + 1];
-    memcpy(ptr_c, ftpDir.c_str(), ftpDir.size());
-    FileNode *root = new FileNode(ptr_c);
-
-    //FileIterator(ftpDir,root);
-
-}
-*/
 int FTPClient::CheckResponse(string response, int code)
 {
     vector<string> vec_str = StringSplit(response, " ");
@@ -387,32 +380,24 @@ int FTPClient::CheckResponse(string response, int code)
     }
     
 }
-int main()
+
+int main(int argc, char *argv[])
 {
-    
     FTPClient ftp;
-    ftp.LoginFTPServer("192.168.2.138", 21, "PC", "123456");
-    //ftp.ChangeDirectory("GitHub/RSA");
-    //ftp.ListDirectory();
-    //ftp.DownloadFile("data.txt");
-    //ftp.DownloadFile("111");
+    ftp.LoginFTPServer(argv[1], 21, argv[2], argv[3]);
     ftp.SetUTF8();
-    /*
-    ftp.ChangeDirectory("ftp/测试");
-    string str_info = ftp.ListDirectory();
-    fout << str_info << endl;
-    */
-    string localDir = "/root/Documents/test_ftp";
-    string tar_directory = "/GitHub/My-Notes";//;
-    char *ptr_c = new char[tar_directory.size() + 1];
-    memcpy(ptr_c, tar_directory.c_str(), tar_directory.size());
-    FileNode *root = new FileNode(ptr_c);
-    //root->SetName(tar_directory);
-    /*
-    char *ptr_c = new char[tar_directory.size()];
-    memcpy(ptr_c, tar_directory.c_str(), tar_directory.size());
-    root->name = ptr_c;
-    */
-    ftp.FileIterator(localDir, tar_directory);
+    string localDir = argv[4];//"C:\\Users\\PC\\Desktop\\ftp";
+    string tar_directory = argv[5];//"\\netcat-win32-1.12";
+    if(localDir.size() > 0 && localDir[localDir.size() - 1] == '\\')
+        localDir = localDir.substr(0, localDir.size()-1);
+    if(tar_directory.size() > 0 && tar_directory[0] == '\\')
+        tar_directory = tar_directory.substr(1, tar_directory.size()-1);
+    while(1)
+    {
+        ftp.FileIterator(localDir, tar_directory);
+        Sleep(10000);
+    }
+    
+    
     return 0;
 }

@@ -1,57 +1,37 @@
 #ifndef FTPCLIENT_H
 #define FTPCLIENT_H
-#include <string.h>
+#ifdef WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <direct.h>
+#include <windows.h>
+#pragma comment(lib, "ws2_32.lib")
+#pragma comment(lib, "wsock32.lib")
+#define closesocket close
+#else
 #include <sys/socket.h>
-#include <sys/types.h>
 #include <sys/ioctl.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <netinet/in.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+typedef SOCKET int;
+#endif
+#include <string>
+#include <string.h>
 #include <iostream>
 #include <vector>
 #include <fstream>
 #include <dirent.h>
-#include <sys/stat.h>
+#include<algorithm>
+
 using namespace std;
-
-class FileNode
-{
-public:
-    char * name;
-    FileNode * next;
-    FileNode * father;
-    FileNode * child;
-    
-public:  
-    FileNode(char* filename)
-    {
-        this->name = filename;
-        //name = ptr_c;
-        this->next = nullptr;
-        this->father = nullptr;
-        this->child = nullptr;
-    }
-    ~FileNode()
-    {
-        delete[] name;
-        this->next = nullptr;
-        this->father = nullptr;
-        this->child = nullptr;
-    }
-   /* 
-public:
-    void SetName(string filename)
-    {
-        
-        memcpy(ptr_c, filename.c_str(), filename.size());
-        //this->name = ptr_c;
-    }
-    */
-    //需要析构函数
-    //...
-};
-
+#ifdef WIN32
+int timeout = 3000;
+#else
 struct timeval timeout = {3,0}; 
+#endif
 
 class FTPClient
 {
@@ -77,11 +57,10 @@ private:
     vector<string> StringSplit(string strSrc, string strFlag);
     
 private:
-    int ConnSocket;
-    int DataSocket;
+    SOCKET ConnSocket;
+    SOCKET DataSocket;
     string ServerIP, DataIP, UserName, Password;
     int ServerPort, DataPort;
-    FileNode * iter_dir;
     ofstream fout;
 };
 
